@@ -25,8 +25,15 @@ handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
 # Google Sheets 授權
 import os
+import json
+
+# 把 GOOGLE_CREDS_JSON 的跳脫字元還原，寫入本地檔案
 with open("google-credentials.json", "w") as f:
-    f.write(os.environ["GOOGLE_CREDS_JSON"])
+    creds = os.environ["GOOGLE_CREDS_JSON"]
+    decoded = json.loads(creds)  # 從跳脫的 \" 與 \\n 還原
+    json.dump(decoded, f)        # 寫入還原後的 JSON 到檔案
+
+
 
 SERVICE_ACCOUNT_FILE = 'google-credentials.json'
 
