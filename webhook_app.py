@@ -70,7 +70,16 @@ def callback():
 def handle_message(event):
     text = event.message.text.strip()
 
-    # 如果訊息是「品項 金額」格式，就寫入記帳
+    # 先快速回覆用戶，避免 webhook timeout
+    try:
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text="⏳ 處理中，稍後幫你記帳")
+        )
+    except:
+        pass  # 有時會回覆太快或重複
+
+    # 背景處理資料（簡化處理示範）
     try:
         item, price = text.split()
         record = {
@@ -85,9 +94,8 @@ def handle_message(event):
             "每日消耗(kcal)": ""
         }
         write_record_to_sheet(record)
-        reply_text = f"✅ 已記帳：{item}，{price} 元"
-    except:
-        reply_text = "請輸入格式：「品項 金額」，例如：起司蛋餅 40"
+    except Exception as e:
+        print("🔴 寫入資料錯誤：", e)
 
     line_bot_api.reply_message(
         event.reply_token,
