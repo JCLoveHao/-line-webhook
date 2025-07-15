@@ -15,7 +15,7 @@ import openai
 
 app = Flask(__name__)
 
-# ✅ 環境變數
+# === ✅ 環境變數 ===
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "")
 LINE_CHANNEL_SECRET = os.environ.get("LINE_CHANNEL_SECRET", "")
 SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID", "")
@@ -25,12 +25,11 @@ line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 openai.api_key = OPENAI_API_KEY
 
-# ✅ Google Sheets 授權
+# === ✅ Google Sheets 授權 ===
 scopes = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive"
 ]
-
 if "GOOGLE_CREDS_JSON" in os.environ:
     creds_escaped = os.environ["GOOGLE_CREDS_JSON"]
     creds_json_str = json.loads(creds_escaped)
@@ -44,7 +43,7 @@ else:
 client = gspread.authorize(credentials)
 sheet = client.open_by_key(SPREADSHEET_ID).sheet1
 
-# ✅ 寫入 Google Sheets 函式
+# === ✅ 資料寫入 ===
 def write_record_to_sheet(record):
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     total = record["單價"] * record["數量"]
@@ -64,34 +63,52 @@ def write_record_to_sheet(record):
     sheet.append_row(row)
     print("✅ 寫入成功：", row)
 
-# ✅ 呼叫 GPT 判斷內容
-def analyze_message_with_gpt(message):
-    prompt = f"""
-你是一個記帳小助手，請協助分析以下文字，並用 JSON 回傳這些欄位：
-分類（食、衣、住、行、育、樂、醫、其他）
-品項
-單價（整數）
-數量（整數，若無則預設1）
-備註（若有附加說明可寫入）
-
-請根據下列訊息拆解：
-「{message}」
-只回傳 JSON，不需要解釋。
-    """
+# === ✅ 判斷資料格式是否正確 ===
+def is_valid_record(record):
     try:
-        response = openai.chat.completions.create(
+        return (
+            isinstance(record["分類"], str) and
+            isinstance(record["品項"], str) and
+            isinstance(record["單價"], int) and
+            isinstance(record["數量"], int)
+        )
+    except:
+        return False
+
+# === ✅ GPT 分析訊息 ===
+def analyze_message_with_gpt(text):
+    try:
+        prompt = f"""
+你是一個記帳助理，請將以下文字轉換為 JSON 格式：
+
+輸入：「{text}」
+
+輸出格式：
+{{
+  "分類": "食",
+  "品項": "蘋果",
+  "單價": 12,
+  "數量": 1,
+  "備註": "LINE輸入",
+  "攝取熱量(kcal)": "",
+  "攝取糖份(g)": "",
+  "剩餘量": "",
+  "每日消耗(kcal)": ""
+}}
+        """
+        response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.2
+            messages=[
+                {"role": "user", "content": prompt}
+            ]
         )
         content = response.choices[0].message.content.strip()
-        print("🧠 GPT 回傳：", content)
+        print("📤 GPT 回傳：", content)
         return json.loads(content)
-    except Exception as e:
-        print("🔴 GPT 分析錯誤：", e)
+    except:
         return None
 
-# ✅ webhook 接收
+# === ✅ webhook ===
 @app.route("/callback", methods=['POST'])
 def callback():
     signature = request.headers['X-Line-Signature']
@@ -102,13 +119,13 @@ def callback():
         abort(400)
     return 'OK'
 
-# ✅ LINE 訊息處理
+# === ✅ 處理 LINE 訊息 ===
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     text = event.message.text.strip()
-    print("📩 接收訊息：", text)
+    print("📩 收到訊息：", text)
 
-    CANCEL_KEYWORDS = ["不用處理", "跳過", "結束", "略過"]
+    CANCEL_KEYWORDS = ["不用處理", "繞過", "結束", "跳過", "沒關係"]
     if any(kw in text for kw in CANCEL_KEYWORDS):
         line_bot_api.reply_message(
             event.reply_token,
@@ -126,22 +143,17 @@ def handle_message(event):
 
     try:
         start_time = time.time()
-        record = analyze_message_with_gpt(text)
-
-        if not record or "單價" not in record:
-            raise ValueError("GPT 無法解析內容")
-
-        # 查詢舊資料（限5秒）
         all_data = sheet.get_all_values()
+        item = text.split()[0]
         matched_rows = []
         for row in all_data[1:]:
             if time.time() - start_time > 5:
                 line_bot_api.push_message(
                     event.source.user_id,
-                    TextSendMessage(text="⚠️ 查詢超過5秒自動停止，如要補充請輸入「沒有」或提供更多資訊")
+                    TextSendMessage(text="⚠️ 查詢超過 5 秒自動停止，請回覆『沒有』或補充資料。")
                 )
                 return
-            if record["品項"] in row:
+            if item in row:
                 matched_rows.append(row)
 
         if matched_rows:
@@ -151,14 +163,17 @@ def handle_message(event):
                 TextSendMessage(text=f"🔍 找到類似資料：\n{preview}")
             )
 
-        record.setdefault("數量", 1)
-        record.setdefault("攝取熱量(kcal)", "")
-        record.setdefault("攝取糖份(g)", "")
-        record.setdefault("剩餘量", "")
-        record.setdefault("每日消耗(kcal)", "")
-        write_record_to_sheet(record)
+        # GPT 處理
+        record = analyze_message_with_gpt(text)
+        if not record or not is_valid_record(record):
+            line_bot_api.push_message(
+                event.source.user_id,
+                TextSendMessage(text="❌ 抱歉，這筆資料我無法理解，請手動輸入或重新描述")
+            )
+            return
 
-        reply_text = f"✅ 已記錄：{record['品項']}，{record['單價']}元 x {record['數量']}"
+        write_record_to_sheet(record)
+        reply_text = f"✅ 已記錄 {record['品項']}，{record['單價']} 元"
         line_bot_api.push_message(
             event.source.user_id,
             TextSendMessage(text=reply_text)
@@ -169,10 +184,10 @@ def handle_message(event):
         traceback.print_exc()
         line_bot_api.push_message(
             event.source.user_id,
-            TextSendMessage(text="❌ 抱歉，這筆資料我無法理解，請手動輸入或重新描述")
+            TextSendMessage(text="❌ 錯誤，請稍後再試或手動輸入")
         )
 
-# ✅ Render 啟動
+# === ✅ Render 起點 ===
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
