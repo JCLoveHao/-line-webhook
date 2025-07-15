@@ -23,15 +23,15 @@ SPREADSHEET_ID = '1H9Ai9eDCzXfzsQQEb7Cxo7B8zr5mZjm7A-8KIFjRmmA'
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
-# Google Sheets 授權
 import os
 import json
 
-# 把 GOOGLE_CREDS_JSON 的跳脫字元還原，寫入本地檔案
-with open("google-credentials.json", "w") as f:
-    creds = os.environ["GOOGLE_CREDS_JSON"]
-    decoded = json.loads(creds)  # 從跳脫的 \" 與 \\n 還原
-    json.dump(decoded, f)        # 寫入還原後的 JSON 到檔案
+with open("google-credentials.json", "r") as f:
+    raw = f.read()
+
+escaped = json.dumps(raw)  # 自動幫你處理跳脫，保證格式正確
+print(escaped)
+
 
 
 
