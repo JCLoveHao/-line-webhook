@@ -92,3 +92,17 @@ def handle_message(event):
             "剩餘量": "",
             "每日消耗(kcal)": ""
         }
+        write_record_to_sheet(record)
+
+        reply_text = f"✅ 已幫你記錄 {item}，金額 {price} 元"
+        line_bot_api.push_message(
+            event.source.user_id,
+            TextSendMessage(text=reply_text)
+        )
+
+    except Exception as e:
+        print("🔴 寫入資料錯誤：", e)
+
+# 本機測試用
+if __name__ == "__main__":
+    app.run(port=5000)
