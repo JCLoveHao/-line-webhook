@@ -1,9 +1,4 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Tue Jul 15 11:48:51 2025
-@author: User
-"""
-
+import re
 from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
@@ -46,17 +41,7 @@ else:
 client = gspread.authorize(credentials)
 sheet = client.open_by_key(SPREADSHEET_ID).sheet1
 
-# === ✅ 共用安全回覆函式 ===
-def safe_reply(event, text):
-    try:
-        if event.source.type == "user":
-            line_bot_api.push_message(event.source.user_id, TextSendMessage(text=text))
-        else:
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=text))
-    except Exception as e:
-        print("❌ 回覆訊息失敗：", e)
-
-# === ✅ 寫入 Google Sheets 函式 ===
+# === ✅ 寫入 Google Sheets ===
 def write_record_to_sheet(record):
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     total = record["單價"] * record["數量"]
@@ -76,7 +61,7 @@ def write_record_to_sheet(record):
     sheet.append_row(row)
     print("✅ 寫入成功：", row)
 
-# === ✅ webhook 接收 ===
+# === ✅ webhook ===
 @app.route("/callback", methods=['POST'])
 def callback():
     signature = request.headers['X-Line-Signature']
@@ -87,15 +72,15 @@ def callback():
         abort(400)
     return 'OK'
 
-# === ✅ LINE 訊息處理 ===
+# === ✅ 處理訊息 ===
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     text = event.message.text.strip()
     print("📬 接收訊息：", text)
 
-    CANCEL_KEYWORDS = ["不用處理", "繞過", "結束", "跳過", "沒關係"]
-    if any(kw in text for kw in CANCEL_KEYWORDS):
-        safe_reply(event, "✅ 已中斷處理")
+    # 使用者中斷關鍵字
+    if any(kw in text for kw in ["不用處理", "繞過", "結束", "跳過", "沒關係"]):
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✅ 已中斷處理"))
         return
 
     try:
@@ -108,25 +93,39 @@ def handle_message(event):
 
     try:
         start_time = time.time()
-        item, price = text.split()
 
+        # === ✅ 自動解析 item 與 price，支援多種格式 ===
+        match = re.match(r"(.+?)[：:：]?\s*(\d+)", text)  # 中/英文冒號 或 沒空格
+        if not match:
+            raise ValueError("格式錯誤，無法解析品項與金額")
+        item = match.group(1).strip()
+        price = int(match.group(2))
+
+        # === 🔍 查詢歷史品項是否出現過 ===
         all_data = sheet.get_all_values()
         matched_rows = []
         for row in all_data[1:]:
             if time.time() - start_time > 5:
-                safe_reply(event, "⚠️ 查詢超過 5 秒自動停止，請輸入『沒有』或補充資料")
+                line_bot_api.push_message(
+                    event.source.user_id,
+                    TextSendMessage(text="⚠️ 查詢超過 5 秒自動停止，請輸入『沒有』或補充資料")
+                )
                 return
             if item in row:
                 matched_rows.append(row)
 
         if matched_rows:
             preview = "\n".join(["｜".join(r[:5]) for r in matched_rows[:3]])
-            safe_reply(event, f"🔍 找到類似資料：\n{preview}")
+            line_bot_api.push_message(
+                event.source.user_id,
+                TextSendMessage(text=f"🔍 找到類似資料：\n{preview}")
+            )
 
+        # === ✅ 寫入記錄 ===
         record = {
             "分類": "食",
             "品項": item,
-            "單價": int(price),
+            "單價": price,
             "數量": 1,
             "備註": "LINE輸入",
             "攝取熱量(kcal)": "",
@@ -137,14 +136,17 @@ def handle_message(event):
         write_record_to_sheet(record)
 
         reply_text = f"✅ 已記錄 {item}，{price} 元"
-        safe_reply(event, reply_text)
+        line_bot_api.push_message(event.source.user_id, TextSendMessage(text=reply_text))
 
     except Exception as e:
         print("🔴 錯誤：", e)
         traceback.print_exc()
-        safe_reply(event, "❌ 錯誤，請手動輸入或稍後再試")
+        line_bot_api.push_message(
+            event.source.user_id,
+            TextSendMessage(text="❌ 發生錯誤，請稍後再試或手動輸入資料。")
+        )
 
-# === ✅ Render 啟動 ===
+# === ✅ 啟動 ===
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
