@@ -14,10 +14,12 @@ from google.oauth2.service_account import Credentials
 from datetime import datetime
 import os
 import json
+import time
+import traceback
 
 app = Flask(__name__)
 
-# === ✅ 建議用環境變數存放關鍵資訊 ===
+# === ✅ 環境變數設定 ===
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "")
 LINE_CHANNEL_SECRET = os.environ.get("LINE_CHANNEL_SECRET", "")
 SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID", "")
@@ -25,22 +27,20 @@ SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID", "")
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
-# === ✅ Google Sheets 授權：支援 Render 雲端與本機切換 ===
+# === ✅ Google Sheets 授權（Render & 本機） ===
 scopes = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive"
 ]
 
 if "GOOGLE_CREDS_JSON" in os.environ:
-    # ✅ Render 雲端部署模式：兩層解析
     creds_escaped = os.environ["GOOGLE_CREDS_JSON"]
-    creds_json_str = json.loads(creds_escaped)       # 第一次解碼
-    creds_dict = json.loads(creds_json_str)          # 第二次解碼
+    creds_json_str = json.loads(creds_escaped)
+    creds_dict = json.loads(creds_json_str)
     with open("google-credentials.json", "w", encoding="utf-8") as f:
         json.dump(creds_dict, f)
     credentials = Credentials.from_service_account_file("google-credentials.json", scopes=scopes)
 else:
-    # ✅ 本機測試模式
     credentials = Credentials.from_service_account_file("google-credentials.json", scopes=scopes)
 
 client = gspread.authorize(credentials)
@@ -81,19 +81,41 @@ def callback():
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     text = event.message.text.strip()
+    print("📩 接收到訊息：", text)
 
-    # 第一次快速回覆，避免 webhook timeout
     try:
         line_bot_api.reply_message(
             event.reply_token,
-            TextSendMessage(text="⏳ 處理中，稍後幫你記帳")
+            TextSendMessage(text="⏳ 處理中，查詢資料中...")
         )
     except:
         pass
 
-    # 寫入 Google Sheets 並第二次回應（用 push_message）
     try:
+        start_time = time.time()
         item, price = text.split()
+
+        # 🔍 快速查詢是否重複品項（限 5 秒）
+        all_data = sheet.get_all_values()
+        headers = all_data[0]
+        matched_rows = []
+        for row in all_data[1:]:
+            if time.time() - start_time > 5:
+                line_bot_api.push_message(
+                    event.source.user_id,
+                    TextSendMessage(text="⚠️ 查詢超過 5 秒，自動停止，請回覆『沒有』或補充資料。")
+                )
+                return
+            if item in row:
+                matched_rows.append(row)
+
+        if matched_rows:
+            preview = "\n".join(["｜".join(r[:5]) for r in matched_rows[:3]])
+            line_bot_api.push_message(
+                event.source.user_id,
+                TextSendMessage(text=f"🔍 找到類似資料：\n{preview}")
+            )
+
         record = {
             "分類": "食",
             "品項": item,
@@ -115,6 +137,11 @@ def handle_message(event):
 
     except Exception as e:
         print("🔴 寫入資料錯誤：", e)
+        traceback.print_exc()
+        line_bot_api.push_message(
+            event.source.user_id,
+            TextSendMessage(text="❌ 發生錯誤，請稍後再試或手動輸入資料。")
+        )
 
 # === ✅ Render 啟動點 ===
 if __name__ == "__main__":
