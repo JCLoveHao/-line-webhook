@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "lineaccountingcalories",
+  "private_key_id": "7388193331b86e4565acb98dde0850ad8774e5b6",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC63ppGxdT2Iafq\nSvEbR9qZEwr9yvqnnZyHr5sHaQRpfENRcYO3PT+w9FH2KbrzqKreU7xpc7pTKlZO\nzXww1BhseqrfPs1BIPBebpcogx+VvaWupfLMGcBNz0e+LF+A21xLCZAHW0WfVADV\n0cmJfIilux8anHxdbgIFH17CeDb7oa5wbNwEf6H2U8OCp12r8f4k2QFTt8XBXTCn\nQO+N26odu/+fylH/duRNeBlyPIlc80YI8/WtVzEwatrq24DC8ABilnSrYoF9eBcU\nNbdnyGtUmTEHWvkMKYvFOIZW64srJJiT9ptt7JyVjx7fBf+cTrfvWGlfk6fCBQnP\nMPgIdsutAgMBAAECggEAI9t2EBGDCU2w+lCyDjGN/SR9zfBGg6ZHNHQaU+QvYAxj\noHufMiiTEaH4Hjuor3uUef/oXfXCcZXkpM9iPr5cB2jMY/UZjp9C8GPZJoFurJ2M\n7sPSIJ7qWyPkmNXL555wCcgGdprpc6a7WEwel36pe9+5mrIfXRAwXApGdRt7NXJe\nxsnQpgKbGBX69O5Y+Pj8rGf0wwFlHQJOlgY9Or+cf5/oJq15xGoUXch2Eu3h3msi\nxhtqmVsdPP0f31t1cwr97sXMZoqD2slMdMOR/N8YxAsBcc7KZq9nEBucEWmWBhzn\n5uDcVqkCI0bK4x9Bk3TL4ELWLyzGVcnUFK387r68sQKBgQD2/GjV321m4PcoIhPY\nzsQeSnP6vz7o/chvO+M2cdWjLfzG4SDcvu39TenlQOnGCY6p6Nchj23Xv7OjwHqX\nwOVeZR+0oZOqphrT8nkRonja4g7AmDkU76DmUaKTCnzWVcHqZ8f3bG2bWAVxVsPC\n62h+pwWb6u7dRPMScx/OwwCdaQKBgQDBsIZxVAUBu9cS9NH584Bjg7OXHaJ629aO\nyOE22FG624D5cV0ZkPK+OdS+cyN1E8wph9vAyt7sthMuZvbs2GHNWF+sAp+nWjIm\nuOXItGHXknSBNk0Il36LTXvo/1js9sr1ghAundTF7zxg+zjjn+dd/sobKx1qmwhM\nn/ymMqC/pQKBgAiBftbGwAzH+JsQOWDBFi344G+lQHRjsRBrnpKUbwgUoFz1Cd2w\nUZ/knAaCKsrgL2KYmzgTqXPBrV0ZVt99DCkpEGN3IQ/CcrAT7Kl3z/Oxz1JAq86V\nxhPIgfHQbaYwA+KfulpCCLBN4roZg9plow6hj+bju2AxbLGY92J2gsHpAoGBAKYr\nLNxTScxX+8d+lBpNZqt5lPyjZv7iVeu/uT/VTCD0Km1WbZn+edLrSHJv006hQnmq\n3cRECAaqmkAoA9XkOdvy4nlu8sufnQENhc2vu3U3Z45nKKWjWuRmAFU/pGn/vNXt\n1LY5oA6EFZfaT88xI0zHx1qRnbYU9YTPiPCI5NIlAoGASonnaVRCSo4pCBG8Y2sB\nI2cnu1FlwD+AoflLCC1GCrzosGemz5e5uvwmJgCTKBtDB3FPHYJWoj2OPkGKaRq3\nexBZG+yv/ODjRRsq8Ay9pCU577XKV4RgEKBrI7I1vxm8S14TDsWEfoX6FWCx1Tfs\nqcoa9yqxTYl+7M6H7MH8WgM=\n-----END PRIVATE KEY-----\n",
+  "client_email": "line-accounting-service@lineaccountingcalories.iam.gserviceaccount.com",
+  "client_id": "116639627507916179962",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/line-accounting-service%40lineaccountingcalories.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
