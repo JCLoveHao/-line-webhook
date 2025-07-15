@@ -1,4 +1,4 @@
 Flask
-line-bot-sdk==2.4.1
 gspread
 google-auth
+line-bot-sdk
