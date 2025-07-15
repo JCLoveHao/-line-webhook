@@ -2,12 +2,5 @@ services:
   - type: web
     name: line-webhook
     env: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: python webhook_app.py
-    envVars:
-      - key: LINE_CHANNEL_ACCESS_TOKEN
-        value: <MAyyJfTnLtvEmFSFAR5JVgQWHsbANaTd+ouYQN32nxtp8NZpsIvBXLRNph7k7/ZesjifiDV5XAMCn4yRV62oJ9OsoalAN1pAKA2R2Z9C5dq6pGzivAbBTi0Wxuik6hf49f7n/H7xNGhp5AQiq5euDQdB04t89/1O/w1cDnyilFU=>
-      - key: LINE_CHANNEL_SECRET
-        value: <97a7506ee36172e1eccb8c6c02d877f0>
-      - key: SPREADSHEET_ID
-        value: <1H9Ai9eDCzXfzsQQEb7Cxo7B8zr5mZjm7A-8KIFjRmmA>
+    buildCommand: ""
+    startCommand: "python webhook_app.py"
