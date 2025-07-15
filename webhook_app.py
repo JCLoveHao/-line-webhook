@@ -25,21 +25,22 @@ SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID", "")
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
-# === ✅ Google Sheets 授權：自動判斷是雲端還是本機 ===
+# === ✅ Google Sheets 授權：支援 Render 雲端與本機切換 ===
 scopes = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive"
 ]
 
 if "GOOGLE_CREDS_JSON" in os.environ:
-    # Render 雲端部署：從環境變數還原 json 憑證
-    creds_str = os.environ["GOOGLE_CREDS_JSON"]
-    creds_dict = json.loads(creds_str)
-    with open("google-credentials.json", "w") as f:
+    # ✅ Render 雲端部署模式：兩層解析
+    creds_escaped = os.environ["GOOGLE_CREDS_JSON"]
+    creds_json_str = json.loads(creds_escaped)       # 第一次解碼
+    creds_dict = json.loads(creds_json_str)          # 第二次解碼
+    with open("google-credentials.json", "w", encoding="utf-8") as f:
         json.dump(creds_dict, f)
     credentials = Credentials.from_service_account_file("google-credentials.json", scopes=scopes)
 else:
-    # 本機測試模式
+    # ✅ 本機測試模式
     credentials = Credentials.from_service_account_file("google-credentials.json", scopes=scopes)
 
 client = gspread.authorize(credentials)
