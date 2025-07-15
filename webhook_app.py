@@ -12,40 +12,40 @@ from linebot.models import MessageEvent, TextMessage, TextSendMessage
 import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
+import os
+import json
 
 app = Flask(__name__)
 
-# === ✏️ 這三個值請你填上自己的 ===
-LINE_CHANNEL_ACCESS_TOKEN = 'MAyyJfTnLtvEmFSFAR5JVgQWHsbANaTd+ouYQN32nxtp8NZpsIvBXLRNph7k7/ZesjifiDV5XAMCn4yRV62oJ9OsoalAN1pAKA2R2Z9C5dq6pGzivAbBTi0Wxuik6hf49f7n/H7xNGhp5AQiq5euDQdB04t89/1O/w1cDnyilFU='
-LINE_CHANNEL_SECRET = '97a7506ee36172e1eccb8c6c02d877f0'
-SPREADSHEET_ID = '1H9Ai9eDCzXfzsQQEb7Cxo7B8zr5mZjm7A-8KIFjRmmA'
+# === ✅ 建議用環境變數存放關鍵資訊 ===
+LINE_CHANNEL_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "")
+LINE_CHANNEL_SECRET = os.environ.get("LINE_CHANNEL_SECRET", "")
+SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID", "")
 
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
-import os
-import json
-
-with open("google-credentials.json", "r") as f:
-    raw = f.read()
-
-escaped = json.dumps(raw)  # 自動幫你處理跳脫，保證格式正確
-print(escaped)
-
-
-
-
-SERVICE_ACCOUNT_FILE = 'google-credentials.json'
-
+# === ✅ Google Sheets 授權：自動判斷是雲端還是本機 ===
 scopes = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive"
 ]
-credentials = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=scopes)
+
+if "GOOGLE_CREDS_JSON" in os.environ:
+    # Render 雲端部署：從環境變數還原 json 憑證
+    creds_str = os.environ["GOOGLE_CREDS_JSON"]
+    creds_dict = json.loads(creds_str)
+    with open("google-credentials.json", "w") as f:
+        json.dump(creds_dict, f)
+    credentials = Credentials.from_service_account_file("google-credentials.json", scopes=scopes)
+else:
+    # 本機測試模式
+    credentials = Credentials.from_service_account_file("google-credentials.json", scopes=scopes)
+
 client = gspread.authorize(credentials)
 sheet = client.open_by_key(SPREADSHEET_ID).sheet1
 
-# 寫入資料函式
+# === ✅ 寫入資料函式 ===
 def write_record_to_sheet(record):
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     total = record["單價"] * record["數量"]
@@ -65,7 +65,7 @@ def write_record_to_sheet(record):
     sheet.append_row(row)
     print("✅ 寫入成功：", row)
 
-# webhook 接收處理
+# === ✅ webhook 接收處理 ===
 @app.route("/callback", methods=['POST'])
 def callback():
     signature = request.headers['X-Line-Signature']
@@ -76,7 +76,7 @@ def callback():
         abort(400)
     return 'OK'
 
-# 處理 LINE 訊息事件
+# === ✅ 處理 LINE 訊息事件 ===
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     text = event.message.text.strip()
@@ -115,6 +115,7 @@ def handle_message(event):
     except Exception as e:
         print("🔴 寫入資料錯誤：", e)
 
-# 本機測試用
+# === ✅ Render 啟動點 ===
 if __name__ == "__main__":
-    app.run(port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
