@@ -1,4 +1,4 @@
-import re
+# -*- coding: utf-8 -*-
 from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
@@ -11,6 +11,7 @@ import os
 import json
 import time
 import traceback
+import openai  # ✅ 加入 GPT
 
 app = Flask(__name__)
 
@@ -18,9 +19,13 @@ app = Flask(__name__)
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "")
 LINE_CHANNEL_SECRET = os.environ.get("LINE_CHANNEL_SECRET", "")
 SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID", "")
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
+
+# === ✅ OpenAI 金鑰設定 ===
+openai.api_key = OPENAI_API_KEY
 
 # === ✅ Google Sheets 授權 ===
 scopes = [
@@ -41,10 +46,34 @@ else:
 client = gspread.authorize(credentials)
 sheet = client.open_by_key(SPREADSHEET_ID).sheet1
 
-# === ✅ 寫入 Google Sheets ===
+# === ✅ GPT 處理函式 ===
+def ask_gpt_for_record(text):
+    prompt = f"""
+你是一位記帳助手，請從使用者輸入的句子中判斷以下欄位（如無法判斷則留空）：
+1. 分類（食、衣、住、行、育、樂、醫、其他）
+2. 品項
+3. 單價
+4. 數量
+5. 備註（可選）
+請輸出 JSON 格式。
+
+輸入：{text}
+    """
+    response = openai.ChatCompletion.create(
+        model="gpt-3.5-turbo",
+        messages=[
+            {"role": "system", "content": "你是專業的記帳助理，擅長資訊結構化。"},
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.3
+    )
+    reply = response["choices"][0]["message"]["content"]
+    return json.loads(reply)
+
+# === ✅ 寫入資料 ===
 def write_record_to_sheet(record):
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
-    total = record["單價"] * record["數量"]
+    total = record.get("單價", 0) * record.get("數量", 1)
     row = [
         now,
         record.get("分類", ""),
@@ -61,7 +90,7 @@ def write_record_to_sheet(record):
     sheet.append_row(row)
     print("✅ 寫入成功：", row)
 
-# === ✅ webhook ===
+# === ✅ webhook 接收 ===
 @app.route("/callback", methods=['POST'])
 def callback():
     signature = request.headers['X-Line-Signature']
@@ -76,77 +105,52 @@ def callback():
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     text = event.message.text.strip()
-    print("📬 接收訊息：", text)
+    print("📩 接收到訊息：", text)
 
-    # 使用者中斷關鍵字
-    if any(kw in text for kw in ["不用處理", "繞過", "結束", "跳過", "沒關係"]):
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✅ 已中斷處理"))
+    CANCEL_KEYWORDS = ["不用處理", "繞過", "結束", "跳過", "沒關係"]
+    if any(kw in text for kw in CANCEL_KEYWORDS):
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text="✅ 已中斷處理")
+        )
         return
 
     try:
         line_bot_api.reply_message(
             event.reply_token,
-            TextSendMessage(text="⏳ 處理中，查詢資料中...")
+            TextSendMessage(text="⏳ 處理中，分析內容...")
         )
     except:
         pass
 
     try:
-        start_time = time.time()
+        record = ask_gpt_for_record(text)
+        record.setdefault("分類", "其他")
+        record.setdefault("單價", 0)
+        record.setdefault("數量", 1)
+        record.setdefault("備註", "GPT自動分類")
+        record.setdefault("攝取熱量(kcal)", "")
+        record.setdefault("攝取糖份(g)", "")
+        record.setdefault("剩餘量", "")
+        record.setdefault("每日消耗(kcal)", "")
 
-        # === ✅ 自動解析 item 與 price，支援多種格式 ===
-        match = re.match(r"(.+?)[：:：]?\s*(\d+)", text)  # 中/英文冒號 或 沒空格
-        if not match:
-            raise ValueError("格式錯誤，無法解析品項與金額")
-        item = match.group(1).strip()
-        price = int(match.group(2))
-
-        # === 🔍 查詢歷史品項是否出現過 ===
-        all_data = sheet.get_all_values()
-        matched_rows = []
-        for row in all_data[1:]:
-            if time.time() - start_time > 5:
-                line_bot_api.push_message(
-                    event.source.user_id,
-                    TextSendMessage(text="⚠️ 查詢超過 5 秒自動停止，請輸入『沒有』或補充資料")
-                )
-                return
-            if item in row:
-                matched_rows.append(row)
-
-        if matched_rows:
-            preview = "\n".join(["｜".join(r[:5]) for r in matched_rows[:3]])
-            line_bot_api.push_message(
-                event.source.user_id,
-                TextSendMessage(text=f"🔍 找到類似資料：\n{preview}")
-            )
-
-        # === ✅ 寫入記錄 ===
-        record = {
-            "分類": "食",
-            "品項": item,
-            "單價": price,
-            "數量": 1,
-            "備註": "LINE輸入",
-            "攝取熱量(kcal)": "",
-            "攝取糖份(g)": "",
-            "剩餘量": "",
-            "每日消耗(kcal)": ""
-        }
         write_record_to_sheet(record)
 
-        reply_text = f"✅ 已記錄 {item}，{price} 元"
-        line_bot_api.push_message(event.source.user_id, TextSendMessage(text=reply_text))
+        reply_text = f"✅ 已記錄：{record.get('品項', '')}，{record.get('單價', 0)} 元"
+        line_bot_api.push_message(
+            event.source.user_id,
+            TextSendMessage(text=reply_text)
+        )
 
     except Exception as e:
         print("🔴 錯誤：", e)
         traceback.print_exc()
         line_bot_api.push_message(
             event.source.user_id,
-            TextSendMessage(text="❌ 發生錯誤，請稍後再試或手動輸入資料。")
+            TextSendMessage(text="❌ 發生錯誤，請稍後再試或手動輸入。")
         )
 
-# === ✅ 啟動 ===
+# === ✅ Flask 啟動點 ===
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
