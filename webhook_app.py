@@ -24,7 +24,12 @@ line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
 # Google Sheets 授權
-SERVICE_ACCOUNT_FILE = 'lineaccountingcalories-7388193331b8.json'
+import os
+with open("google-credentials.json", "w") as f:
+    f.write(os.environ["GOOGLE_CREDS_JSON"])
+
+SERVICE_ACCOUNT_FILE = 'google-credentials.json'
+
 scopes = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive"
