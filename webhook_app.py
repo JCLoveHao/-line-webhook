@@ -19,7 +19,7 @@ import traceback
 
 app = Flask(__name__)
 
-# === ✅ 環境變數設定 ===
+# === ✅ 環境設定 ===
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "")
 LINE_CHANNEL_SECRET = os.environ.get("LINE_CHANNEL_SECRET", "")
 SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID", "")
@@ -27,7 +27,7 @@ SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID", "")
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
-# === ✅ Google Sheets 授權（Render & 本機） ===
+# === ✅ Google Sheets 授權 ===
 scopes = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive"
@@ -46,7 +46,17 @@ else:
 client = gspread.authorize(credentials)
 sheet = client.open_by_key(SPREADSHEET_ID).sheet1
 
-# === ✅ 寫入資料函式 ===
+# === ✅ 共用安全回覆函式 ===
+def safe_reply(event, text):
+    try:
+        if event.source.type == "user":
+            line_bot_api.push_message(event.source.user_id, TextSendMessage(text=text))
+        else:
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=text))
+    except Exception as e:
+        print("❌ 回覆訊息失敗：", e)
+
+# === ✅ 寫入 Google Sheets 函式 ===
 def write_record_to_sheet(record):
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     total = record["單價"] * record["數量"]
@@ -66,7 +76,7 @@ def write_record_to_sheet(record):
     sheet.append_row(row)
     print("✅ 寫入成功：", row)
 
-# === ✅ webhook 接收處理 ===
+# === ✅ webhook 接收 ===
 @app.route("/callback", methods=['POST'])
 def callback():
     signature = request.headers['X-Line-Signature']
@@ -77,11 +87,16 @@ def callback():
         abort(400)
     return 'OK'
 
-# === ✅ 處理 LINE 訊息事件 ===
+# === ✅ LINE 訊息處理 ===
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     text = event.message.text.strip()
-    print("📩 接收到訊息：", text)
+    print("📬 接收訊息：", text)
+
+    CANCEL_KEYWORDS = ["不用處理", "繞過", "結束", "跳過", "沒關係"]
+    if any(kw in text for kw in CANCEL_KEYWORDS):
+        safe_reply(event, "✅ 已中斷處理")
+        return
 
     try:
         line_bot_api.reply_message(
@@ -95,26 +110,18 @@ def handle_message(event):
         start_time = time.time()
         item, price = text.split()
 
-        # 🔍 快速查詢是否重複品項（限 5 秒）
         all_data = sheet.get_all_values()
-        headers = all_data[0]
         matched_rows = []
         for row in all_data[1:]:
             if time.time() - start_time > 5:
-                line_bot_api.push_message(
-                    event.source.user_id,
-                    TextSendMessage(text="⚠️ 查詢超過 5 秒，自動停止，請回覆『沒有』或補充資料。")
-                )
+                safe_reply(event, "⚠️ 查詢超過 5 秒自動停止，請輸入『沒有』或補充資料")
                 return
             if item in row:
                 matched_rows.append(row)
 
         if matched_rows:
             preview = "\n".join(["｜".join(r[:5]) for r in matched_rows[:3]])
-            line_bot_api.push_message(
-                event.source.user_id,
-                TextSendMessage(text=f"🔍 找到類似資料：\n{preview}")
-            )
+            safe_reply(event, f"🔍 找到類似資料：\n{preview}")
 
         record = {
             "分類": "食",
@@ -129,21 +136,15 @@ def handle_message(event):
         }
         write_record_to_sheet(record)
 
-        reply_text = f"✅ 已幫你記錄 {item}，金額 {price} 元"
-        line_bot_api.push_message(
-            event.source.user_id,
-            TextSendMessage(text=reply_text)
-        )
+        reply_text = f"✅ 已記錄 {item}，{price} 元"
+        safe_reply(event, reply_text)
 
     except Exception as e:
-        print("🔴 寫入資料錯誤：", e)
+        print("🔴 錯誤：", e)
         traceback.print_exc()
-        line_bot_api.push_message(
-            event.source.user_id,
-            TextSendMessage(text="❌ 發生錯誤，請稍後再試或手動輸入資料。")
-        )
+        safe_reply(event, "❌ 錯誤，請手動輸入或稍後再試")
 
-# === ✅ Render 啟動點 ===
+# === ✅ Render 啟動 ===
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
