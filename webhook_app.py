@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """
 Created on Tue Jul 15 11:48:51 2025
-
 @author: User
 """
 
@@ -70,16 +69,16 @@ def callback():
 def handle_message(event):
     text = event.message.text.strip()
 
-    # 先快速回覆用戶，避免 webhook timeout
+    # 第一次快速回覆，避免 webhook timeout
     try:
         line_bot_api.reply_message(
             event.reply_token,
             TextSendMessage(text="⏳ 處理中，稍後幫你記帳")
         )
     except:
-        pass  # 有時會回覆太快或重複
+        pass
 
-    # 背景處理資料（簡化處理示範）
+    # 寫入 Google Sheets 並第二次回應（用 push_message）
     try:
         item, price = text.split()
         record = {
@@ -93,15 +92,3 @@ def handle_message(event):
             "剩餘量": "",
             "每日消耗(kcal)": ""
         }
-        write_record_to_sheet(record)
-    except Exception as e:
-        print("🔴 寫入資料錯誤：", e)
-
-    line_bot_api.reply_message(
-        event.reply_token,
-        TextSendMessage(text=reply_text)
-    )
-
-# 本機測試用
-if __name__ == "__main__":
-    app.run(port=5000)
