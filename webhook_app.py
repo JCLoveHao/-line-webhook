@@ -1,4 +1,11 @@
 # -*- coding: utf-8 -*-
+"""
+Created on Tue Jul 15 16:54:13 2025
+
+@author: User
+"""
+
+# -*- coding: utf-8 -*-
 from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
@@ -78,7 +85,7 @@ def is_valid_record(record):
 # === ✅ GPT 分析訊息（強制回傳 JSON 格式）===
 def analyze_message_with_gpt(text, retry=1):
     prompt = f"""
-你是一個記帳助理，請將下列用戶輸入文字轉換成 JSON 格式，格式如下：
+你是一個記帳助理，請將下列文字轉成乾淨的 JSON 格式（不要加任何多餘說明文字），格式如下：
 
 {{
   "分類": "食",             
@@ -92,7 +99,8 @@ def analyze_message_with_gpt(text, retry=1):
   "每日消耗(kcal)": ""
 }}
 
-如果資訊不足（例如沒有提到數量或分類），請填上 null 或 ""，不要猜測。只回傳 JSON。
+若無法判斷的欄位請填 null 或空字串，並且**只輸出 JSON 本體，不要任何解釋**。
+
 使用者輸入：
 {text}
     """.strip()
@@ -106,12 +114,17 @@ def analyze_message_with_gpt(text, retry=1):
         content = response.choices[0].message.content.strip()
         print("📤 GPT 回傳內容：", content)
 
+        # 嘗試抽出 JSON 區段
         start = content.find("{")
         end = content.rfind("}")
         if start == -1 or end == -1:
             raise ValueError("找不到有效 JSON")
 
         json_str = content[start:end+1]
+
+        # 處理中文引號、破損格式
+        json_str = json_str.replace("“", "\"").replace("”", "\"").replace("‘", "\"").replace("’", "\"")
+
         return json.loads(json_str)
 
     except Exception as e:
@@ -121,6 +134,7 @@ def analyze_message_with_gpt(text, retry=1):
             time.sleep(1)
             return analyze_message_with_gpt(text, retry=retry-1)
         return None
+
 
 # === ✅ webhook 接收入口 ===
 @app.route("/callback", methods=['POST'])
