@@ -15,7 +15,7 @@ import openai
 
 app = Flask(__name__)
 
-# === ✅ 環境設定 ===
+# === ✅ 環境變數 ===
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "")
 LINE_CHANNEL_SECRET = os.environ.get("LINE_CHANNEL_SECRET", "")
 SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID", "")
@@ -59,7 +59,7 @@ def write_record_to_sheet(record):
     sheet.append_row(row)
     print("✅ 寫入成功：", row)
 
-# === ✅ GPT 分析訊息 ===
+# === ✅ GPT 分析訊息（強制 JSON）===
 def analyze_message_with_gpt(text, retry=1):
     prompt = f"""
 你是一個 LINE 記帳小幫手，請將以下訊息轉為純 JSON 格式，格式如下：
@@ -138,7 +138,7 @@ def handle_message(event):
 
     CANCEL_KEYWORDS = ["不用處理", "繞過", "結束", "跳過", "沒關係"]
     if any(kw in text for kw in CANCEL_KEYWORDS):
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✅ 已中斷處理"))
+        smart_push_message(event, "✅ 已中斷處理")
         return
 
     try:
@@ -152,22 +152,28 @@ def handle_message(event):
             smart_push_message(event, "❌ 分析失敗，請再試一次")
             return
 
+        # 檢查缺欄位
         MISSING = []
         if not record.get("分類"): MISSING.append("分類（如食/衣/住/行）")
         if not record.get("品項"): MISSING.append("品項（如蘋果）")
         if not isinstance(record.get("單價"), int): MISSING.append("單價（如50元）")
-        if not isinstance(record.get("數量"), int): MISSING.append("數量（如1個）")
+        if not isinstance(record.get("數量"), int): MISSING.append("數量（如1份）")
 
         if MISSING:
-            tips = "❓ 我需要更多資料：\n" + "\n".join(f"- {m}" for m in MISSING)
-            smart_push_message(event, tips)
+            msg = "❓ 請補充以下資料：\n" + "\n".join(f"- {m}" for m in MISSING)
+            smart_push_message(event, msg)
             return
 
         write_record_to_sheet(record)
-        reply = f"✅ 已記錄：{record['品項']} x {record['數量']} = {record['單價'] * record['數量']} 元"
+        reply = f"✅ 已記錄：{record['品項']} × {record['數量']} = {record['單價'] * record['數量']} 元"
         smart_push_message(event, reply)
 
     except Exception as e:
-        print("🔴 錯誤：", e)
+        print("❌ 發生錯誤：", e)
         traceback.print_exc()
-        smart_push_message(event, "❌ 錯誤，請稍後再試")
+        smart_push_message(event, "❌ 系統錯誤，請稍後再試")
+
+# === ✅ Flask 執行點（Render專用） ===
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
