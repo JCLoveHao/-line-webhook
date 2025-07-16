@@ -1,11 +1,4 @@
 # -*- coding: utf-8 -*-
-"""
-Created on Tue Jul 15 16:54:13 2025
-
-@author: User
-"""
-
-# -*- coding: utf-8 -*-
 from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
@@ -61,11 +54,7 @@ def write_record_to_sheet(record):
         record.get("單價", ""),
         record.get("數量", ""),
         total,
-        record.get("備註", ""),
-        record.get("攝取熱量(kcal)", ""),
-        record.get("攝取糖份(g)", ""),
-        record.get("剩餘量", ""),
-        record.get("每日消耗(kcal)", "")
+        record.get("備註", "")
     ]
     sheet.append_row(row)
     print("✅ 寫入成功：", row)
@@ -82,24 +71,22 @@ def is_valid_record(record):
     except:
         return False
 
-# === ✅ GPT 分析訊息（強制回傳 JSON 格式）===
+# === ✅ GPT 分析訊息（簡化版）===
 def analyze_message_with_gpt(text, retry=1):
     prompt = f"""
-你是一個記帳助理，請將下列文字轉成乾淨的 JSON 格式（不要加任何多餘說明文字），格式如下：
+你是一個 LINE 記帳小幫手，請將以下訊息轉換為 JSON 格式，格式如下：
 
 {{
-  "分類": "食",             
+  "分類": "食",
   "品項": "蘋果",
   "單價": 12,
   "數量": 1,
-  "備註": "LINE輸入",
-  "攝取熱量(kcal)": 100,
-  "攝取糖份(g)": 15,
-  "剩餘量": "",
-  "每日消耗(kcal)": ""
+  "備註": "LINE輸入"
 }}
 
-若無法判斷的欄位請填 null 或空字串，並且**只輸出 JSON 本體，不要任何解釋**。
+請注意：
+- 若無法判斷的欄位請填 "" 或 null
+- 只輸出純 JSON，不能加說明文字
 
 使用者輸入：
 {text}
@@ -107,24 +94,19 @@ def analyze_message_with_gpt(text, retry=1):
 
     try:
         response = openai.ChatCompletion.create(
-            model="gpt-4",
+            model="gpt-3.5-turbo",  # ✅ 免費帳戶請使用 3.5
             messages=[{"role": "user", "content": prompt}],
             temperature=0.2
         )
         content = response.choices[0].message.content.strip()
         print("📤 GPT 回傳內容：", content)
 
-        # 嘗試抽出 JSON 區段
         start = content.find("{")
         end = content.rfind("}")
         if start == -1 or end == -1:
-            raise ValueError("找不到有效 JSON")
-
+            raise ValueError("找不到 JSON")
         json_str = content[start:end+1]
-
-        # 處理中文引號、破損格式
-        json_str = json_str.replace("“", "\"").replace("”", "\"").replace("‘", "\"").replace("’", "\"")
-
+        json_str = json_str.replace("“", "\"").replace("”", "\"")
         return json.loads(json_str)
 
     except Exception as e:
@@ -134,7 +116,6 @@ def analyze_message_with_gpt(text, retry=1):
             time.sleep(1)
             return analyze_message_with_gpt(text, retry=retry-1)
         return None
-
 
 # === ✅ webhook 接收入口 ===
 @app.route("/callback", methods=['POST'])
@@ -147,7 +128,7 @@ def callback():
         abort(400)
     return 'OK'
 
-# === ✅ 處理使用者訊息 ===
+# === ✅ 處理訊息 ===
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     text = event.message.text.strip()
@@ -155,73 +136,42 @@ def handle_message(event):
 
     CANCEL_KEYWORDS = ["不用處理", "繞過", "結束", "跳過", "沒關係"]
     if any(kw in text for kw in CANCEL_KEYWORDS):
-        line_bot_api.reply_message(
-            event.reply_token,
-            TextSendMessage(text="✅ 已中斷處理")
-        )
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✅ 已中斷處理"))
         return
 
     try:
-        line_bot_api.reply_message(
-            event.reply_token,
-            TextSendMessage(text="⏳ 處理中，查詢資料中...")
-        )
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="⏳ 處理中..."))
     except:
         pass
 
     try:
-        # Step 1: 查找歷史類似資料（可選）
-        all_data = sheet.get_all_values()
-        item = text.split()[0]
-        matched_rows = [row for row in all_data[1:] if item in row]
-        if matched_rows:
-            preview = "\n".join(["｜".join(r[:5]) for r in matched_rows[:3]])
-            line_bot_api.push_message(
-                event.source.user_id,
-                TextSendMessage(text=f"🔍 找到類似資料：\n{preview}")
-            )
-
-        # Step 2: GPT 分析
         record = analyze_message_with_gpt(text)
         if not record:
-            line_bot_api.push_message(
-                event.source.user_id,
-                TextSendMessage(text="❌ 分析失敗，請再試一次或換句話說")
-            )
+            line_bot_api.push_message(event.source.user_id, TextSendMessage(text="❌ 分析失敗，請再試一次"))
             return
 
-        # Step 3: 缺資料補問
-        MISSING_FIELDS = []
-        if not record.get("分類"): MISSING_FIELDS.append("分類（如食/衣/住/行）")
-        if not record.get("品項"): MISSING_FIELDS.append("品項（如蘋果/衣服）")
-        if not isinstance(record.get("單價"), int): MISSING_FIELDS.append("單價（例如：50元）")
-        if not isinstance(record.get("數量"), int): MISSING_FIELDS.append("數量（例如：1個）")
+        # 檢查缺欄位
+        MISSING = []
+        if not record.get("分類"): MISSING.append("分類（食/衣/住/行）")
+        if not record.get("品項"): MISSING.append("品項（如蘋果）")
+        if not isinstance(record.get("單價"), int): MISSING.append("單價（如50元）")
+        if not isinstance(record.get("數量"), int): MISSING.append("數量（如1個）")
 
-        if MISSING_FIELDS:
-            question = "❓ 我需要更多資訊：\n" + "\n".join(f"- {f}" for f in MISSING_FIELDS)
-            line_bot_api.push_message(
-                event.source.user_id,
-                TextSendMessage(text=question)
-            )
+        if MISSING:
+            ask = "❓ 我需要更多資訊：\n" + "\n".join(f"- {m}" for m in MISSING)
+            line_bot_api.push_message(event.source.user_id, TextSendMessage(text=ask))
             return
 
-        # Step 4: 寫入 Google Sheets
         write_record_to_sheet(record)
-        reply_text = f"✅ 已記錄：{record['品項']} × {record['數量']} = {record['單價'] * record['數量']} 元"
-        line_bot_api.push_message(
-            event.source.user_id,
-            TextSendMessage(text=reply_text)
-        )
+        reply = f"✅ 已記錄：{record['品項']} × {record['數量']} = {record['單價'] * record['數量']} 元"
+        line_bot_api.push_message(event.source.user_id, TextSendMessage(text=reply))
 
     except Exception as e:
         print("🔴 錯誤：", e)
         traceback.print_exc()
-        line_bot_api.push_message(
-            event.source.user_id,
-            TextSendMessage(text="❌ 錯誤，請稍後再試或手動輸入")
-        )
+        line_bot_api.push_message(event.source.user_id, TextSendMessage(text="❌ 發生錯誤，請稍後再試"))
 
-# === ✅ Render 啟動點 ===
+# === ✅ Render 起點 ===
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
