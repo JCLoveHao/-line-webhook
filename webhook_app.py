@@ -60,9 +60,9 @@ def write_record_to_sheet(record):
     print("✅ 寫入成功：", row)
 
 # === ✅ GPT 分析訊息（強制 JSON）===
-def analyze_message_with_gpt(text, retry=1):
+def analyze_message_with_gpt(text, retry=2):
     prompt = f"""
-你是一個 LINE 記帳小幫手，請將以下訊息轉為純 JSON 格式，格式如下：
+你是一個 LINE 記帳小幫手，請將以下訊息轉為【純 JSON】格式，格式如下（不要多加說明文字）：
 
 {{
   "分類": "食",
@@ -72,9 +72,11 @@ def analyze_message_with_gpt(text, retry=1):
   "備註": "LINE輸入"
 }}
 
-請注意：
-- 缺欄位請填空字串 ""，不要加多餘文字
-- 僅輸出 JSON，不要多餘解釋
+⚠️ 請注意：
+- 僅回傳一個 JSON 區塊，不需要說明文字
+- 所有欄位都要有，若沒有請填 ""
+- 數字欄位必須是數字（如：單價、數量）
+- 不要換行、不要加上「以下是」或「這是你要的」之類的語句
 
 使用者輸入：
 {text}
@@ -86,12 +88,13 @@ def analyze_message_with_gpt(text, retry=1):
             temperature=0.2
         )
         content = response.choices[0].message.content.strip()
-        print("📤 GPT 回傳內容：", content)
+        print("📤 GPT 原始回應：", content)
 
         start = content.find("{")
         end = content.rfind("}")
         if start == -1 or end == -1:
-            raise ValueError("找不到 JSON")
+            raise ValueError("找不到 JSON 區塊")
+
         json_str = content[start:end+1]
         json_str = json_str.replace("“", "\"").replace("”", "\"").replace("‘", "\"").replace("’", "\"")
         json_str = json_str.replace("\n", "").replace("\\", "")
@@ -99,9 +102,10 @@ def analyze_message_with_gpt(text, retry=1):
 
     except Exception as e:
         print("❌ GPT 分析錯誤：", e)
+        print("⚠️ GPT 回傳內容：", locals().get("content", "（無內容）"))
         if retry > 0:
-            print("🔁 Retry...")
-            time.sleep(1)
+            print("🔁 正在重試...")
+            time.sleep(1.5)
             return analyze_message_with_gpt(text, retry=retry-1)
         return None
 
