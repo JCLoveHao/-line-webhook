@@ -15,7 +15,7 @@ import openai
 
 app = Flask(__name__)
 
-# === ✅ 環境變數 ===
+# === ✅ 環境設定 ===
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "")
 LINE_CHANNEL_SECRET = os.environ.get("LINE_CHANNEL_SECRET", "")
 SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID", "")
@@ -59,7 +59,7 @@ def write_record_to_sheet(record):
     sheet.append_row(row)
     print("✅ 寫入成功：", row)
 
-# === ✅ GPT 分析訊息（強制 JSON）===
+# === ✅ GPT 分析訊息 ===
 def analyze_message_with_gpt(text, retry=1):
     prompt = f"""
 你是一個 LINE 記帳小幫手，請將以下訊息轉為純 JSON 格式，格式如下：
@@ -116,14 +116,14 @@ def callback():
         abort(400)
     return 'OK'
 
-# === ✅ 傳訊小工具（自動偵測來源）===
+# === ✅ 智慧傳訊工具 ===
 def smart_push_message(event, text):
     try:
-        if hasattr(event.source, 'user_id'):
+        if hasattr(event.source, 'user_id') and event.source.user_id:
             line_bot_api.push_message(event.source.user_id, TextSendMessage(text=text))
-        elif hasattr(event.source, 'group_id'):
+        elif hasattr(event.source, 'group_id') and event.source.group_id:
             line_bot_api.push_message(event.source.group_id, TextSendMessage(text=text))
-        elif hasattr(event.source, 'room_id'):
+        elif hasattr(event.source, 'room_id') and event.source.room_id:
             line_bot_api.push_message(event.source.room_id, TextSendMessage(text=text))
         else:
             print("⚠️ 無法識別訊息來源")
@@ -152,9 +152,22 @@ def handle_message(event):
             smart_push_message(event, "❌ 分析失敗，請再試一次")
             return
 
-        # 檢查缺欄位
         MISSING = []
         if not record.get("分類"): MISSING.append("分類（如食/衣/住/行）")
         if not record.get("品項"): MISSING.append("品項（如蘋果）")
         if not isinstance(record.get("單價"), int): MISSING.append("單價（如50元）")
-        if not isinstance
+        if not isinstance(record.get("數量"), int): MISSING.append("數量（如1個）")
+
+        if MISSING:
+            tips = "❓ 我需要更多資料：\n" + "\n".join(f"- {m}" for m in MISSING)
+            smart_push_message(event, tips)
+            return
+
+        write_record_to_sheet(record)
+        reply = f"✅ 已記錄：{record['品項']} x {record['數量']} = {record['單價'] * record['數量']} 元"
+        smart_push_message(event, reply)
+
+    except Exception as e:
+        print("🔴 錯誤：", e)
+        traceback.print_exc()
+        smart_push_message(event, "❌ 錯誤，請稍後再試")
